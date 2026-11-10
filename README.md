@@ -1,52 +1,39 @@
-# LDAPDomainDump
-Active Directory information dumper via LDAP
+# ldapdomaindump-ng
+Active Directory information dumper via LDAP, based on [ldapdomaindump](https://github.com/dirkjanm/ldapdomaindump) by [Dirk-jan Mollema](https://github.com/dirkjanm).
 
-## Introduction
-In an Active Directory domain, a lot of interesting information can be retrieved via LDAP by any authenticated user (or machine).
-This makes LDAP an interesting protocol for gathering information in the recon phase of a pentest of an internal network.
-A problem is that data from LDAP often is not available in an easy to read format.
+Any authenticated domain user can read a lot of information over LDAP. ldapdomaindump-ng collects it and writes it as a readable HTML report, JSON and greppable files.
 
-ldapdomaindump is a tool which aims to solve this problem, by collecting and parsing information available via LDAP and outputting it in a human readable HTML format, as well as machine readable json and csv/tsv/greppable files.
+## What's new compared to ldapdomaindump
+- **Authentication**: Kerberos (ccache, password, NT hash, AES key, cross-realm) ported from [BloodHound.py](https://github.com/dirkjanm/BloodHound.py), automatic fallback to NTLM, pass-the-hash with `--hashes`, StartTLS, LDAP channel binding, `DOMAIN\user`, `DOMAIN/user` or `user@domain` usernames, DC hostname resolved with `-n`, NTLM on Python/OpenSSL versions without MD4
+- **Collection**: domain and forest details, domain controllers, FSMO roles, sites, OUs, GPOs, AD integrated DNS, PKI, managed service accounts, contacts, foreign security principals, and more account attributes (UPN, manager, replicated last logon, encryption types, delegation, LAPS presence)
+- **HTML report**: single self-contained report with navigation, overview page, filtering, sorting, column chooser, CSV export, OU tree, organization chart, group membership explorer and dark mode
+- **Output**: choice of formats with `-f`, one file per format with `--single-file`
+- **Fixes**: wrong password policy values in `ldd2pretty`, "never" intervals shown as huge numbers, unescaped directory values in the HTML report
 
-The tool was designed with the following goals in mind:
-- Easy overview of all users/groups/computers/policies in the domain
-- Authentication both via username and password, as with NTLM hashes (requires ldap3 >=1.3.1)
-- Possibility to run the tool with an existing authenticated connection to an LDAP service, allowing for integration with relaying tools such as impackets ntlmrelayx
+New columns are appended at the end of the greppable files, so existing scripts keep working.
 
-The tool outputs several files containing an overview of objects in the domain:
-- *domain_groups*: List of groups in the domain
-- *domain_users*: List of users in the domain
-- *domain_computers*: List of computer accounts in the domain
-- *domain_policy*: Domain policy such as password requirements and lockout policy
-- *domain_trusts*: Incoming and outgoing domain trusts, and their properties
-
-As well as two grouped files:
-- *domain_users_by_group*: Domain users per group they are member of
-- *domain_computers_by_os*: Domain computers sorted by Operating System
-
-## Dependencies and installation
-Requires [ldap3](https://github.com/cannatag/ldap3) > 2.0 and [dnspython](https://github.com/rthalley/dnspython). ldapdomaindump requires Python 3.6 or greater.
-
-Dependencies can be installed manually with `pip install ldap3 dnspython future`, but should in most cases be handled by pip when you install the main package either from git or pypi.
-
-The ldapdomaindump package can be installed with `python setup.py install` from the git source, or for the latest release with `pip install ldapdomaindump`.
+## Installation
+Python 3.6 or greater is required.
+```
+pip install .
+```
+NTLM signing and channel binding need the [ly4k/ldap3](https://github.com/ly4k/ldap3) fork, which is the ldap3 version referenced by `pyproject.toml`.
 
 ## Usage
-There are 3 ways to use the tool:
-- With just the source, run `python ldapdomaindump.py`
-- After installing, by running `python -m ldapdomaindump`
-- After installing, by running `ldapdomaindump`
+Run `ldapdomaindump-ng` once installed, `python -m ldapdomaindump`, or `python ldapdomaindump-ng.py` from the source.
 
-Help can be obtained with the -h switch:
 ```
-usage: ldapdomaindump.py [-h] [-u USERNAME] [-p PASSWORD] [-at {NTLM,SIMPLE}]
-                         [-o DIRECTORY] [--no-html] [--no-json] [--no-grep]
-                         [--grouped-json] [-d DELIMITER] [-r] [-n DNS_SERVER]
-                         [-m]
-                         HOSTNAME
+usage: ldapdomaindump-ng.py [-h] [-u USERNAME] [-p PASSWORD] [--domain DOMAIN]
+                            [--auth-method {auto,ntlm,kerberos}] [-k]
+                            [--hashes LMHASH:NTHASH] [-aesKey HEXKEY]
+                            [-no-pass] [--start-tls] [--ldap-channel-binding]
+                            [--no-tls-verify] [-o DIRECTORY] [-f FORMATS]
+                            [--single-file] [--grouped-json] [-d DELIMITER]
+                            [-r] [-n DNS_SERVER] [-m] [--debug]
+                            HOSTNAME
 
-Domain information dumper via LDAP. Dumps users/computers/groups and
-OS/membership information to HTML/JSON/greppable output.
+ldapdomaindump-ng: Active Directory information dumper via LDAP. Dumps users, groups, computers,
+OUs, GPOs, DNS, PKI and more to HTML/JSON/greppable output.
 
 Required options:
   HOSTNAME              Hostname/ip or ldap://host:port connection string to
@@ -54,56 +41,105 @@ Required options:
 
 Main options:
   -h, --help            show this help message and exit
-  -u USERNAME, --user USERNAME
-                        DOMAIN\username for authentication, leave empty for
-                        anonymous authentication
-  -p PASSWORD, --password PASSWORD
-                        Password or LM:NTLM hash, will prompt if not specified
-  -at {NTLM,SIMPLE}, --authtype {NTLM,SIMPLE}
-                        Authentication type (NTLM or SIMPLE, default: NTLM)
+
+Authentication options:
+  -u, --username, --user USERNAME
+                        Username: user@domain (UPN), DOMAIN\user or
+                        DOMAIN/user. Leave empty for anonymous bind
+  -p, --password PASSWORD
+                        Password for authentication. Prompted if not specified
+                        (unless -no-pass, -k, --hashes or -aesKey is used)
+  --domain DOMAIN       Domain/realm, used when the username does not contain
+                        one
+  --auth-method {auto,ntlm,kerberos}
+                        Authentication method (default: auto, try Kerberos
+                        first and fall back to NTLM)
+  -k, --kerberos        Use Kerberos authentication with the ticket from the
+                        KRB5CCNAME ccache. Implies --auth-method kerberos
+  --hashes LMHASH:NTHASH
+                        NTLM hashes in LM:NT format (LM can be blank: :NT).
+                        The NT hash is also usable as an RC4 key for Kerberos
+  -aesKey HEXKEY        AES128 (32 hex) or AES256 (64 hex) Kerberos key
+  -no-pass              Don't prompt for a password (useful with -k, --hashes
+                        or -aesKey)
+
+Connection options:
+  --start-tls           Upgrade plain LDAP to TLS with StartTLS before binding
+                        (not compatible with ldaps://)
+  --ldap-channel-binding
+                        Use LDAP channel binding (EPA, RFC 5929 tls-server-
+                        end-point) over ldaps:// or StartTLS, for NTLM and
+                        Kerberos
+  --no-tls-verify       Disable TLS certificate validation (insecure, for
+                        self-signed DC certificates)
 
 Output options:
-  -o DIRECTORY, --outdir DIRECTORY
+  -o, --outdir DIRECTORY
                         Directory in which the dump will be saved (default:
                         current)
-  --no-html             Disable HTML output
-  --no-json             Disable JSON output
-  --no-grep             Disable Greppable output
+  -f, --format FORMATS  Output formats to generate, comma separated or
+                        repeated: html, json, grep or all (default: all).
+                        Example: -f html,json
+  --single-file         Write a single file per output format
+                        (domain_dump.html/.json/.grep) instead of one file per
+                        report
   --grouped-json        Also write json files for grouped files (default:
                         disabled)
-  -d DELIMITER, --delimiter DELIMITER
+  -d, --delimiter DELIMITER
                         Field delimiter for greppable output (default: tab)
 
 Misc options:
   -r, --resolve         Resolve computer hostnames (might take a while and
                         cause high traffic on large networks)
-  -n DNS_SERVER, --dns-server DNS_SERVER
-                        Use custom DNS resolver instead of system DNS (try a
-                        domain controller IP)
+  -n, --dns-server DNS_SERVER
+                        DNS server used to resolve the DC hostname and
+                        computer hostnames (try a domain controller IP)
   -m, --minimal         Only query minimal set of attributes to limit memmory
                         usage
+  --debug               Enable verbose debug logging (auth flow and ldap3
+                        EXTENDED logs)
+
+examples:
+  ldapdomaindump-ng.py -u user@corp.local -p 'Passw0rd' dc01.corp.local
+  ldapdomaindump-ng.py -u 'CORP\user' -p 'Passw0rd' 10.0.0.10
+  ldapdomaindump-ng.py -u user@corp.local --hashes :<NThash> dc01.corp.local
+  ldapdomaindump-ng.py -u user@corp.local -k -no-pass dc01.corp.local     (KRB5CCNAME=user.ccache)
+  ldapdomaindump-ng.py -u user@corp.local -aesKey <hexkey> dc01.corp.local
+  ldapdomaindump-ng.py -u user@corp.local -p 'Passw0rd' --ldap-channel-binding ldaps://dc01.corp.local
 ```
 
-## Options
-### Authentication
-Most AD servers support NTLM authentication. In the rare case that it does not, use --authtype SIMPLE.
+Notes:
+- `--auth-method auto` (default) tries Kerberos first and falls back to NTLM. Kerberos needs the DC hostname, not its IP; use `-n` if your DNS does not resolve it.
+- If the DC enforces LDAP signing, use Kerberos, `ldaps://` or `--start-tls`.
+- Quote `'DOMAIN\user'` (the shell removes an unquoted backslash) or use `DOMAIN/user`.
+- `-r` resolves every computer hostname, which can be slow and load the DC; `domain_dns` usually gives the same information without any query.
+- `--minimal` only requests the attributes shown in the HTML and greppable files, to limit memory usage on large domains.
 
-### Output formats
-By default the tool outputs all files in HTML, JSON and tab delimited output (greppable). There are also two grouped files (users_by_group and computers_by_os) for convenience. These do not have a greppable output. JSON output for grouped files is disabled by default since it creates very large files without any data that isn't present in the other files already.
+## Reports
+| Report | Content |
+|---|---|
+| `index` | Overview (HTML only) |
+| `domain_info` | Domain and forest, domain controllers, FSMO roles, sites, subnets, site links |
+| `domain_users` / `domain_groups` / `domain_computers` | Accounts |
+| `domain_policy` / `domain_trusts` | Password policy, domain trusts |
+| `domain_ous` / `domain_gpos` | OU tree with linked GPOs, group policy objects |
+| `domain_dns` | AD integrated DNS zones and records |
+| `domain_pki` | Certificate authorities and templates |
+| `domain_services` | Managed service accounts, SPNs by service |
+| `domain_contacts` / `domain_foreign` | Contacts, foreign security principals |
+| `domain_users_by_group` / `domain_computers_by_os` | Grouped views (JSON only with `--grouped-json`) |
+| `domain_orgchart` / `domain_membership` | Organization chart, group membership explorer (HTML only) |
 
-### DNS resolving
-An important option is the *-r* option, which decides if a computers DNSHostName attribute should be resolved to an IPv4 address. 
-While this can be very useful, the DNSHostName attribute is not automatically updated. When the AD Domain uses subdomains for computer hostnames, the DNSHostName will often be incorrect and will not resolve. Also keep in mind that resolving every hostname in the domain might cause a high load on the domain controller.
+With `--single-file`, everything goes to `domain_dump.html`, `domain_dump.json` and `domain_dump.grep`.
 
-### Minimizing network and memory usage
-By default ldapdomaindump will try to dump every single attribute it can read to disk in the .json files. In large networks, this uses a lot of memory (since group relationships are currently calculated in memory before being written to disk). To dump only the minimal required attributes (the ones shown by default in the .html and .grep files), use the `--minimal` switch.
+## Utilities
+- `ldd2bloodhound` converts the JSON files to CSV for BloodHound 1.x. For current BloodHound versions, use [BloodHound.py](https://github.com/dirkjanm/BloodHound.py).
+- `ldd2pretty` prints the JSON files in an enum4linux like format.
 
-## Visualizing groups with BloodHound
-LDAPDomainDump includes a utility that can be used to convert ldapdomaindumps `.json` files to CSV files suitable for BloodHound. The utility is called `ldd2bloodhound` and is added to your path upon installation. Alternatively you can run it with `python -m ldapdomaindump.convert` or with `python ldapdomaindump/convert.py` if you are running it from the source.
-The conversion tool will take the users/groups/computers/trusts `.json` file and convert those to `group_membership.csv` and `trust.csv` which you can add to BloodHound. *Note that these files are only compatible with **BloodHound 1.x** which is quite old. There are no plans to support the latest version as the [BloodHound.py project](https://github.com/fox-it/BloodHound.py) was made for this. With the DCOnly collection method this tool will also only talk to LDAP and collect more information than ldapdomaindump would*.
-
-## Visualizing dump with a pretty output like enum4linux
-LDAPDomainDump includes a utility that can be used to output ldapdomaindumps `.json` files to an enum4linux like output. The utility is called `ldd2pretty` and is added to your path upon installation. Alternatively you can run it with `python -m ldapdomaindump.pretty` or with `python ldapdomaindump/pretty.py` if you are running it from the source.
+## Credits
+- [Dirk-jan Mollema](https://github.com/dirkjanm): ldapdomaindump and BloodHound.py
+- [bandrel](https://github.com/bandrel): Kerberos, StartTLS, channel binding and debug support
+- the ldapdomaindump contributors
 
 ## License
-MIT
+MIT, see [LICENSE](LICENSE).

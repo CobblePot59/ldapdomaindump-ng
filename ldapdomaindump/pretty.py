@@ -6,21 +6,24 @@ from time import strftime, gmtime
 
 class PrettyOuput():
 
+    # pwdProperties as a 6 bit string, most significant bit first
+    # (REFUSE_PASSWORD_CHANGE ... PASSWORD_COMPLEX)
     def d2b(self, a):
-        tbin = []
-        while a:
-            tbin.append(a % 2)
-            a //= 2
-
-        t2bin = tbin[::-1]
-        if len(t2bin) != 8:
-            for x in range(6 - len(t2bin)):
-                t2bin.insert(0, 0)
-        return ''.join([str(g) for g in t2bin])
+        return format(int(a) & 0x3f, '06b')
 
     def convert(self, time):
+        if time is None:
+            return "Not Set"
         if isinstance(time, str):
-            return time
+            # ldap3 >= 2.6 serializes intervals as str(timedelta), e.g. "42 days, 0:00:00"
+            m = re.match(r'^(?:(\d+) days?, )?(\d+):(\d+):(\d+)(?:\.\d+)?$', time.strip())
+            if not m:
+                return time
+            days, hrs, mins, secs = (int(x or 0) for x in m.groups())
+            # timedelta.max is used by ldap3 for the special "never" value
+            if days >= 999999999:
+                return "Not Set"
+            time = -((((days * 24 + hrs) * 60 + mins) * 60 + secs) * 10000000)
         if time == 0:
             return "None"
         if time == -9223372036854775808:
@@ -45,7 +48,9 @@ class PrettyOuput():
             result += "{0} minutes ".format(mins)
         elif mins == 1:
             result += "{0} minute ".format(mins)
-        return result
+        if not result:
+            result = "{0} seconds".format(sec)
+        return result.strip()
 
     def password_complexity(self, data):
 
@@ -56,7 +61,7 @@ class PrettyOuput():
     ''')
 
         print("[+] Password Info for Domain:", data[0]['attributes']['dc'][0].upper())
-        print("\t[+] Minimum password length: ", data[0]['attributes']['instanceType'][0])
+        print("\t[+] Minimum password length:", data[0]['attributes']['minPwdLength'][0])
         print("\t[+] Password history length:", data[0]['attributes']['pwdHistoryLength'][0])
 
         password_properties = self.d2b(data[0]['attributes']['pwdProperties'][0])
@@ -69,11 +74,14 @@ class PrettyOuput():
         print("\t\t[+] Domain Password No Anon Change:", password_properties[4])
         print("\t\t[+] Domain Password Complex:", password_properties[5])
         print("")
-        print("\t[+] Maximum password age:", self.convert(data[0]['attributes']['maxPwdAge'][0]))
-        print("\t[+] Minimum password age:", self.convert(data[0]['attributes']['minPwdAge'][0]))
-        print("\t[+] Reset Account Lockout Counter:", self.convert(data[0]['attributes']['lockoutDuration'][0]))
-        print("\t[+] Account Lockout Threshold:", data[0]['attributes']['lockoutThreshold'][0])
-        print("\t[+] Forced Log off Time:", self.convert(data[0]['attributes']['forceLogoff'][0]))
+        attrs = data[0]['attributes']
+        get = lambda name: attrs[name][0] if attrs.get(name) else None
+        print("\t[+] Maximum password age:", self.convert(get('maxPwdAge')))
+        print("\t[+] Minimum password age:", self.convert(get('minPwdAge')))
+        print("\t[+] Reset Account Lockout Counter:", self.convert(get('lockOutObservationWindow')))
+        print("\t[+] Locked Account Duration:", self.convert(get('lockoutDuration')))
+        print("\t[+] Account Lockout Threshold:", get('lockoutThreshold'))
+        print("\t[+] Forced Log off Time:", self.convert(get('forceLogoff')))
 
     def domain_info(self, data):
         print('''
@@ -103,7 +111,7 @@ class PrettyOuput():
 
     def groups_info(self, groups, dc):
         print('''
-    +------------------------+import os.path
+    +------------------------+
     | Groups Infos           |
     +------------------------+
     ''')

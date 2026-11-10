@@ -1,2 +1,5 @@
 ldap3
 dnspython
+impacket>=0.9.17
+pyasn1>=0.4
+pycryptodome

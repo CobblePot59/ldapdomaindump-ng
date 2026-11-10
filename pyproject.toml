@@ -3,28 +3,35 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ldapdomaindump"
-version = "0.10.1"
-description = "Active Directory information dumper via LDAP"
+name = "ldapdomaindump-ng"
+version = "1.0.0"
+description = "Active Directory information dumper via LDAP (next generation of ldapdomaindump)"
 authors = [
-  { name = "Dirk-jan Mollema", email = "dirkjan@dirkjanm.io" }
+  { name = "Dirk-jan Mollema", email = "dirkjan@dirkjanm.io" },
+  { name = "CobblePot59" }
 ]
-urls = { "Homepage" = "https://github.com/dirkjanm/ldapdomaindump/" }
+urls = { "Homepage" = "https://github.com/CobblePot59/ldapdomaindump-ng", "Original project" = "https://github.com/dirkjanm/ldapdomaindump" }
 requires-python = ">=3.6"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
   "dnspython",
-  "ldap3>=2.5,!=2.5.2,!=2.5.0,!=2.6"
+  "impacket>=0.9.17",
+  "ldap3 @ git+https://github.com/ly4k/ldap3",
+  "pyasn1>=0.4",
+  "pycryptodome"
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
 
 [tool.setuptools.packages.find]
 include = ["ldapdomaindump"]
 
 [tool.setuptools.package-data]
-ldapdomaindump = ["style.css"]
+ldapdomaindump = ["style.css", "report.js"]
 
 [project.scripts]
-ldapdomaindump = "ldapdomaindump:main"
+ldapdomaindump-ng = "ldapdomaindump:main"
 ldd2bloodhound = "ldapdomaindump.convert:ldd2bloodhound"
 ldd2pretty = "ldapdomaindump.pretty:main"

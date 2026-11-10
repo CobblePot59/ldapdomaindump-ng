@@ -1,5 +1,14 @@
 build/
 dist/
-ldapdomaindump.egg-info
 domainlookup.py
 *.pyc
+.pytest_cache/
+__pycache__/
+*.egg-info/
+.venv/
+
+# ldapdomaindump-ng output (never publish a domain dump)
+index.html
+domain_*.html
+domain_*.json
+domain_*.grep
